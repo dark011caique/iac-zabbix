@@ -1,0 +1,79 @@
+---
+- hosts: zabbix
+  become: yes  # Sobe como root
+  tasks:
+
+    - name: Atualizar pacotes e instalar dependências
+      apt:
+        update_cache: yes
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+        state: present
+
+    - name: Adicionar chave GPG do Docker
+      command: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+
+    - name: Adicionar repositório Docker
+      command: add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+    - name: Instalar Docker
+      apt:
+        name: docker-ce
+        state: present
+
+    - name: Instalar Docker Compose
+      command: curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+    - name: Aplicar permissões de execução no Docker Compose
+      file:
+        path: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Criar diretório para o Zabbix
+      file:
+        path: /opt/zabbix
+        state: directory
+        mode: '0755'
+
+    - name: Criar arquivo docker-compose.yml para Zabbix
+      copy:
+        dest: /opt/zabbix/docker-compose.yml
+        content: |
+          version: '3'
+          services:
+            zabbix-server:
+              image: zabbix/zabbix-server-mysql
+              environment:
+                - DB_SERVER_HOST=mysql
+                - MYSQL_USER=zabbix
+                - MYSQL_PASSWORD=zabbix_password
+                - MYSQL_ROOT_PASSWORD=root_password
+              ports:
+                - "10051:10051"
+
+            mysql:
+              image: mysql:5.7
+              environment:
+                - MYSQL_DATABASE=zabbix
+                - MYSQL_USER=zabbix
+                - MYSQL_PASSWORD=zabbix_password
+                - MYSQL_ROOT_PASSWORD=root_password
+
+            zabbix-web:
+              image: zabbix/zabbix-web-nginx-mysql
+              environment:
+                - DB_SERVER_HOST=mysql
+                - MYSQL_USER=zabbix
+                - MYSQL_PASSWORD=zabbix_password
+                - MYSQL_ROOT_PASSWORD=root_password
+              ports:
+                - "8080:8080"
+                - "443:8443"
+
+    - name: Subir containers do Zabbix com Docker Compose
+      command: docker-compose up -d
+      args:
+        chdir: /opt/zabbix
