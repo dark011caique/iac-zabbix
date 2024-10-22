@@ -1,9 +1,10 @@
 ---
 - hosts: zabbix
-  become: yes  # Sobe como root
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
   tasks:
-    - name: Coletar informações sobre o sistema
-      ansible.builtin.setup:
 
     - name: Atualizar pacotes e instalar dependências
       apt:
@@ -13,6 +14,7 @@
           - ca-certificates
           - curl
           - software-properties-common
+          - python3-pip
         state: present
 
     - name: Baixar chave GPG do Docker
@@ -25,7 +27,7 @@
 
     - name: Adicionar repositório Docker
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable"
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
         state: present
 
     - name: Instalar Docker
@@ -33,52 +35,17 @@
         name: docker-ce
         state: present
 
+    - name: Obter informações do sistema para Docker Compose
+      shell: uname -s && uname -m
+      register: system_info
+
     - name: Instalar Docker Compose
       get_url:
-        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-{{ ansible_facts.system }}-{{ ansible_facts.architecture }}"
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-{{ system_info.stdout_lines[0] | trim }}-{{ system_info.stdout_lines[1] | trim }}"
         dest: /usr/local/bin/docker-compose
         mode: '0755'
 
-    - name: Criar diretório para o Zabbix
-      file:
-        path: /opt/zabbix
-        state: directory
-        mode: '0755'
-
-    - name: Criar arquivo docker-compose.yml para Zabbix
-      copy:
-        dest: /opt/zabbix/docker-compose.yml
-        content: |
-          version: '3'
-          services:
-            zabbix-server:
-              image: zabbix/zabbix-server-mysql:latest
-              environment:
-                - DB_SERVER_HOST=mysql
-                - MYSQL_USER=zabbix
-                - MYSQL_PASSWORD=zabbix_password
-                - MYSQL_ROOT_PASSWORD=root_password
-              ports:
-                - "10051:10051"
-            mysql:
-              image: mysql:8.0.30
-              environment:
-                - MYSQL_DATABASE=zabbix
-                - MYSQL_USER=zabbix
-                - MYSQL_PASSWORD=zabbix_password
-                - MYSQL_ROOT_PASSWORD=root_password
-            zabbix-web:
-              image: zabbix/zabbix-web-nginx-mysql:latest
-              environment:
-                - DB_SERVER_HOST=mysql
-                - MYSQL_USER=zabbix
-                - MYSQL_PASSWORD=zabbix_password
-                - MYSQL_ROOT_PASSWORD=root_password
-              ports:
-                - "8080:8080"
-                - "443:8443"
-
-    - name: Subir containers do Zabbix com Docker Compose
-      command: docker-compose up -d
-      args:
-        chdir: /opt/zabbix
+    - name: Baixar repositório Zabbix
+      git:
+        repo: https://github.com/carryontech/zabbix-docker-compose.git
+        dest: /opt/zabbix-docker-compose
