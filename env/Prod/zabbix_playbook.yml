@@ -2,6 +2,8 @@
 - hosts: zabbix
   become: yes  # Sobe como root
   tasks:
+    - name: Coletar informações sobre o sistema
+      ansible.builtin.setup:
 
     - name: Atualizar pacotes e instalar dependências
       apt:
@@ -13,11 +15,18 @@
           - software-properties-common
         state: present
 
+    - name: Baixar chave GPG do Docker
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /tmp/docker_gpg_key
+
     - name: Adicionar chave GPG do Docker
-      command: curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+      command: apt-key add /tmp/docker_gpg_key
 
     - name: Adicionar repositório Docker
-      command: add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_facts.distribution_release }} stable"
+        state: present
 
     - name: Instalar Docker
       apt:
@@ -25,11 +34,9 @@
         state: present
 
     - name: Instalar Docker Compose
-      command: curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-
-    - name: Aplicar permissões de execução no Docker Compose
-      file:
-        path: /usr/local/bin/docker-compose
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-{{ ansible_facts.system }}-{{ ansible_facts.architecture }}"
+        dest: /usr/local/bin/docker-compose
         mode: '0755'
 
     - name: Criar diretório para o Zabbix
@@ -45,7 +52,7 @@
           version: '3'
           services:
             zabbix-server:
-              image: zabbix/zabbix-server-mysql
+              image: zabbix/zabbix-server-mysql:latest
               environment:
                 - DB_SERVER_HOST=mysql
                 - MYSQL_USER=zabbix
@@ -53,17 +60,15 @@
                 - MYSQL_ROOT_PASSWORD=root_password
               ports:
                 - "10051:10051"
-
             mysql:
-              image: mysql:5.7
+              image: mysql:8.0.30
               environment:
                 - MYSQL_DATABASE=zabbix
                 - MYSQL_USER=zabbix
                 - MYSQL_PASSWORD=zabbix_password
                 - MYSQL_ROOT_PASSWORD=root_password
-
             zabbix-web:
-              image: zabbix/zabbix-web-nginx-mysql
+              image: zabbix/zabbix-web-nginx-mysql:latest
               environment:
                 - DB_SERVER_HOST=mysql
                 - MYSQL_USER=zabbix
