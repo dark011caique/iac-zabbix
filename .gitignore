@@ -10,3 +10,5 @@
 *.pem
 
 *iac-*
+*iac-zabbix*
+
